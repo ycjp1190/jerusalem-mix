@@ -1,0 +1,13 @@
+{
+  "name": "Jerusalem Mix Design Preview",
+  "short_name": "Jerusalem Mix",
+  "description": "StageMix-style shared UI preview for Jerusalem Hall CL5",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#090c11",
+  "theme_color": "#090c11",
+  "categories": ["music", "utilities"]
+}

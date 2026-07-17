@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jerusalem Mix</string>
+    <string name="allow_verified_control">검증된 기능 제어 허용 (Mute/Fader/Mix Send)</string>
+    <string name="allow_experimental_control">실험 기능 허용 (Gain/PAN/PEQ · +48V 제외)</string>
+    <string name="control_safety_warning">기본값은 읽기 전용입니다. +48V 송신은 현장 검증 전까지 항상 차단됩니다.</string>
+</resources>

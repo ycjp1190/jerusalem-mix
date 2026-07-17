@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#090c11">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Jerusalem Mix</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app" class="app-shell">
+    <header class="topbar">
+      <section class="brand">
+        <span class="brand-mark">JM</span>
+        <div><strong>JERUSALEM MIX</strong><small>YAMAHA CL5 REMOTE</small></div>
+      </section>
+      <section class="status-panel">
+        <span id="statusDot" class="status-dot demo"></span>
+        <div><strong id="statusText">DESIGN DEMO</strong><small id="platformText">WEB · 콘솔 미연결</small></div>
+      </section>
+      <button id="mixButton" class="top-button hidden" type="button">MIX 1</button>
+      <button id="sofButton" class="top-button accent" type="button">SENDS ON FADER</button>
+      <button id="detailButton" class="top-button" type="button">SELECTED CH</button>
+      <button id="setupButton" class="top-button" type="button">SETUP</button>
+    </header>
+
+    <section class="workspace">
+      <aside class="side-meter" aria-label="selected channel meter">
+        <span>+10</span><span>0</span><span>-10</span><span>-20</span><span>-40</span><span>-60</span>
+        <div class="meter-rail"><i></i></div>
+      </aside>
+      <section id="strips" class="strips" aria-label="channel faders"></section>
+    </section>
+
+    <nav id="banks" class="bankbar" aria-label="channel banks"></nav>
+    <footer class="safety-banner"><strong>DESIGN DEMO</strong><span>웹에서는 콘솔 명령을 전송하지 않습니다.</span></footer>
+  </main>
+
+  <div id="mixModal" class="modal" hidden>
+    <section class="dialog compact" role="dialog" aria-modal="true">
+      <header><div><small>SENDS ON FADER</small><h2>MIX 선택</h2></div><button data-close type="button">×</button></header>
+      <div id="mixGrid" class="mix-grid"></div>
+    </section>
+  </div>
+
+  <div id="detailModal" class="modal" hidden>
+    <section class="dialog detail-dialog" role="dialog" aria-modal="true">
+      <header><div><small>SELECTED CHANNEL</small><h2 id="detailTitle">CH 1 · KICK</h2></div><button data-close type="button">×</button></header>
+      <div class="detail-body">
+        <section class="preamp-card panel">
+          <h3>HEAD AMP</h3>
+          <label>GAIN <output id="gainValue">+0.0 dB</output><input id="gainSlider" type="range" min="-600" max="6600" step="100"></label>
+          <button id="phantomButton" class="phantom locked" type="button" disabled>+48V · SAFETY LOCK</button>
+          <p>현장 프로토콜 검증 전까지 송신이 차단됩니다.</p>
+        </section>
+        <section class="pan-card panel">
+          <h3>PAN</h3>
+          <output id="panValue">C</output>
+          <input id="panSlider" type="range" min="-63" max="63" step="1">
+          <div class="pan-scale"><span>L</span><span>C</span><span>R</span></div>
+        </section>
+        <section class="peq-card panel">
+          <header class="peq-head"><h3>CH PEQ · 4 BAND</h3><label class="switch"><input id="peqOn" type="checkbox"><span></span>ON</label></header>
+          <canvas id="eqGraph" width="900" height="220"></canvas>
+          <div id="eqBands" class="eq-bands"></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script src="core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
