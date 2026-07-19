@@ -104,11 +104,11 @@ public final class ClConnection implements AutoCloseable {
     }
 
     public boolean isControlEnabled() {
-        return connected.get() && controlEnabled;
+        return ControlSafetyPolicy.mayWriteVerified(connected.get(), controlEnabled);
     }
 
     public boolean isExperimentalEnabled() {
-        return isControlEnabled() && experimentalEnabled;
+        return ControlSafetyPolicy.mayWriteExperimental(connected.get(), controlEnabled, experimentalEnabled);
     }
 
     public void setChannelOn(ChannelState channel, boolean on) {
