@@ -24,7 +24,7 @@
       </section>
       <button id="mixButton" class="top-button hidden" type="button">MIX 1</button>
       <button id="sofButton" class="top-button accent" type="button">SENDS ON FADER</button>
-      <button id="detailButton" class="top-button" type="button">SELECTED CH</button>
+      <button id="detailButton" class="top-button selected-ch-button" type="button"><span>SELECTED</span><strong>CH</strong></button>
       <button id="setupButton" class="top-button" type="button">SETUP</button>
     </header>
 
@@ -36,13 +36,22 @@
       <section id="strips" class="strips" aria-label="channel faders"></section>
     </section>
 
-    <nav id="banks" class="bankbar" aria-label="channel banks"></nav>
+    <nav class="bankdock" aria-label="channel banks">
+      <div class="view-tabs">
+        <button type="button" data-view="input" class="active">INPUT</button>
+        <button type="button" data-view="output">OUTPUT</button>
+        <button type="button" data-view="dca">DCA</button>
+      </div>
+      <button id="prevBank" class="bank-arrow" type="button" aria-label="previous bank">◀</button>
+      <div id="banks" class="bankbar"></div>
+      <button id="nextBank" class="bank-arrow" type="button" aria-label="next bank">▶</button>
+    </nav>
     <footer class="safety-banner"><strong>DESIGN DEMO</strong><span>웹에서는 콘솔 명령을 전송하지 않습니다.</span></footer>
   </main>
 
   <div id="mixModal" class="modal" hidden>
     <section class="dialog compact" role="dialog" aria-modal="true">
-      <header><div><small>SENDS ON FADER</small><h2>MIX 선택</h2></div><button data-close type="button">×</button></header>
+      <header><div><small>SENDS ON FADER</small><h2>MIX / MATRIX 선택</h2></div><button data-close type="button">×</button></header>
       <div id="mixGrid" class="mix-grid"></div>
     </section>
   </div>
@@ -50,23 +59,45 @@
   <div id="detailModal" class="modal" hidden>
     <section class="dialog detail-dialog" role="dialog" aria-modal="true">
       <header><div><small>SELECTED CHANNEL</small><h2 id="detailTitle">CH 1 · KICK</h2></div><button data-close type="button">×</button></header>
+      <nav class="detail-tabs">
+        <button type="button" data-tab="head" class="active">1 HEAD AMP + PAN</button>
+        <button type="button" data-tab="dynamic">2 DYNAMIC 1 + 2</button>
+        <button type="button" data-tab="peq">3 PEQ + HPF</button>
+        <button type="button" data-tab="sends">4 MIX SEND</button>
+      </nav>
       <div class="detail-body">
-        <section class="preamp-card panel">
-          <h3>HEAD AMP</h3>
-          <label>GAIN <output id="gainValue">+0.0 dB</output><input id="gainSlider" type="range" min="-600" max="6600" step="100"></label>
-          <button id="phantomButton" class="phantom locked" type="button" disabled>+48V · SAFETY LOCK</button>
-          <p>현장 프로토콜 검증 전까지 송신이 차단됩니다.</p>
+        <section class="detail-page head-page" data-page="head">
+          <section class="preamp-card panel">
+            <h3>HEAD AMP</h3>
+            <label>GAIN <output id="gainValue">+0.0 dB</output><input id="gainSlider" type="range" min="-600" max="6600" step="100"></label>
+            <button id="phantomButton" class="phantom locked" type="button" disabled>+48V · SAFETY LOCK</button>
+            <p>현장 프로토콜 검증 전까지 +48V 송신이 차단됩니다.</p>
+          </section>
+          <section class="pan-card panel">
+            <h3>PAN</h3>
+            <output id="panValue">C</output>
+            <input id="panSlider" type="range" min="-63" max="63" step="1">
+            <div class="pan-scale"><span>L</span><span>C</span><span>R</span></div>
+          </section>
         </section>
-        <section class="pan-card panel">
-          <h3>PAN</h3>
-          <output id="panValue">C</output>
-          <input id="panSlider" type="range" min="-63" max="63" step="1">
-          <div class="pan-scale"><span>L</span><span>C</span><span>R</span></div>
+        <section class="detail-page dynamic-page" data-page="dynamic" hidden>
+          <div id="dynamicEditors" class="dynamic-editors"></div>
         </section>
-        <section class="peq-card panel">
-          <header class="peq-head"><h3>CH PEQ · 4 BAND</h3><label class="switch"><input id="peqOn" type="checkbox"><span></span>ON</label></header>
-          <canvas id="eqGraph" width="900" height="220"></canvas>
-          <div id="eqBands" class="eq-bands"></div>
+        <section class="detail-page peq-page" data-page="peq" hidden>
+          <section class="peq-card panel">
+            <header class="peq-head"><h3>CH PEQ · 4 BAND</h3><label class="switch"><input id="peqOn" type="checkbox"><span></span>EQ ON</label></header>
+            <div class="hpf-controls">
+              <label class="switch"><input id="hpfOn" type="checkbox"><span></span>HPF</label>
+              <label>FREQ <output id="hpfValue">80Hz</output><input id="hpfSlider" type="range" min="200" max="6000" step="10"></label>
+              <label>SLOPE <select id="hpfSlope"><option value="-6">-6 dB/oct</option><option value="-12">-12 dB/oct</option></select></label>
+            </div>
+            <div class="eq-graph-wrap"><canvas id="eqGraph" width="1000" height="330"></canvas><div id="eqMarkers" class="eq-markers"></div></div>
+            <div id="eqBands" class="eq-bands"></div>
+          </section>
+        </section>
+        <section class="detail-page sends-page" data-page="sends" hidden>
+          <header class="send-page-head"><div><strong>MIX / MATRIX SENDS</strong><small>LEVEL · ON · PRE/POST</small></div><button id="hideUnused" type="button">HIDE UNUSED</button></header>
+          <div id="channelSends" class="channel-sends"></div>
         </section>
       </div>
     </section>

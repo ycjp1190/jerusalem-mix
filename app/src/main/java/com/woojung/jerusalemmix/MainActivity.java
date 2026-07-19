@@ -27,6 +27,8 @@ import android.window.OnBackInvokedDispatcher;
 import com.woojung.jerusalemmix.model.ChannelState;
 import com.woojung.jerusalemmix.model.EqBand;
 import com.woojung.jerusalemmix.model.MixerState;
+import com.woojung.jerusalemmix.model.DynamicState;
+import com.woojung.jerusalemmix.model.OutputState;
 import com.woojung.jerusalemmix.protocol.ClConnection;
 
 import org.json.JSONArray;
@@ -116,7 +118,7 @@ public final class MainActivity extends Activity implements ClConnection.Listene
         }
 
         @JavascriptInterface public void setMix(int mix) {
-            state.selectedMix = clamp(mix, 0, 23);
+            state.selectedMix = clamp(mix, 0, 31);
             connection.pollVisibleBank();
             publishState();
         }
@@ -129,7 +131,8 @@ public final class MainActivity extends Activity implements ClConnection.Listene
             long now = System.currentTimeMillis();
             if (finished || now - lastFaderSendMs >= 55) {
                 lastFaderSendMs = now;
-                if (state.sendsOnFader) connection.setSendLevel(channel, state.selectedMix, level);
+                if (state.sendsOnFader && state.selectedMix < 24) connection.setSendLevel(channel, state.selectedMix, level);
+                else if (state.sendsOnFader) connection.setMatrixSendLevel(channel, state.selectedMix - 24, level);
                 else connection.setFader(channel, level);
             }
         }
@@ -143,9 +146,45 @@ public final class MainActivity extends Activity implements ClConnection.Listene
 
         @JavascriptInterface public void setSendOn(int index, int mix, boolean on) {
             ChannelState channel = state.channel(index);
-            int safeMix = clamp(mix, 0, 23);
+            int safeMix = clamp(mix, 0, 31);
             channel.mixSendOn[safeMix] = on;
-            connection.setSendOn(channel, safeMix, on);
+            if (safeMix < 24) connection.setSendOn(channel, safeMix, on);
+            else connection.setMatrixSendOn(channel, safeMix - 24, on);
+            publishState();
+        }
+
+        @JavascriptInterface public void setSendLevel(int index, int target, int value, boolean finished) {
+            ChannelState channel = state.channel(index);
+            int safeTarget = clamp(target, 0, 31);
+            int level = clamp(value, -32768, 1000);
+            channel.mixSendHundredthDb[safeTarget] = level;
+            long now = System.currentTimeMillis();
+            if (!finished && now - lastFaderSendMs < 55) return;
+            lastFaderSendMs = now;
+            if (safeTarget < 24) connection.setSendLevel(channel, safeTarget, level);
+            else connection.setMatrixSendLevel(channel, safeTarget - 24, level);
+        }
+
+        @JavascriptInterface public void setSendPre(int index, int target, boolean pre) {
+            ChannelState channel = state.channel(index);
+            int safeTarget = clamp(target, 0, 31);
+            channel.mixSendPre[safeTarget] = pre;
+            connection.setSendPre(channel, safeTarget, pre);
+            publishState();
+        }
+
+        @JavascriptInterface public void setOutputFader(String kind, int index, int value) {
+            OutputState output = output(kind, index);
+            if (output == null) return;
+            output.faderHundredthDb = clamp(value, -32768, 1000);
+            connection.setOutputUnverified(kind + " Fader");
+        }
+
+        @JavascriptInterface public void setOutputOn(String kind, int index, boolean on) {
+            OutputState output = output(kind, index);
+            if (output == null) return;
+            output.on = on;
+            connection.setOutputUnverified(kind + " ON");
             publishState();
         }
 
@@ -180,9 +219,51 @@ public final class MainActivity extends Activity implements ClConnection.Listene
             connection.setExperimental(channel, "PEQ/Band/" + parameter, safeBand, value);
         }
 
+        @JavascriptInterface public void setEqType(int index, int band, String type) {
+            ChannelState channel = state.channel(index);
+            int safeBand = clamp(band, 0, 3);
+            if (safeBand == 0 && !("Bell".equals(type) || "Shelf".equals(type))) return;
+            if (safeBand == 3 && !("Bell".equals(type) || "Shelf".equals(type) || "LPF".equals(type))) return;
+            channel.eqBands[safeBand].type = type;
+            connection.warnUnverified("PEQ band type");
+        }
+
+        @JavascriptInterface public void setHpf(int index, boolean on, int frequency, int slope) {
+            ChannelState channel = state.channel(index);
+            channel.hpfOn = on;
+            channel.hpfFrequencyTenthHz = clamp(frequency, 200, 6000);
+            channel.hpfSlope = slope == -6 ? -6 : -12;
+            connection.warnUnverified("HPF");
+        }
+
+        @JavascriptInterface public void setDynamic(int index, int processor, String parameter, String rawValue) {
+            ChannelState channel = state.channel(index);
+            DynamicState dynamic = processor == 1 ? channel.dynamic1 : channel.dynamic2;
+            try {
+                int value = Integer.parseInt(rawValue);
+                switch (parameter) {
+                    case "on" -> dynamic.on = value != 0;
+                    case "threshold" -> dynamic.thresholdHundredthDb = clamp(value, -8000, 0);
+                    case "ratio" -> dynamic.ratioHundredths = clamp(value, 100, 2000);
+                    case "range" -> dynamic.rangeHundredthDb = clamp(value, -7000, 0);
+                    case "attack" -> dynamic.attackTenthsMs = clamp(value, 0, 8000);
+                    case "hold" -> dynamic.holdTenthsMs = clamp(value, 0, 10000);
+                    case "release" -> dynamic.releaseTenthsMs = clamp(value, 50, 10000);
+                    case "outGain" -> dynamic.outGainHundredthDb = clamp(value, -1800, 1800);
+                    case "knee" -> dynamic.knee = clamp(value, 0, 5);
+                    default -> { return; }
+                }
+            } catch (NumberFormatException error) {
+                if (!"type".equals(parameter)) return;
+                dynamic.type = rawValue.replaceAll("[^A-Za-z-]", "");
+            }
+            connection.warnUnverified("Dynamics " + processor);
+        }
+
         @JavascriptInterface public void requestPhantom(int index, boolean enabled) {
             connection.setPhantomBlocked(state.channel(index), enabled);
         }
+        @JavascriptInterface public void setAdvanced(String feature) { connection.warnUnverified(feature); }
 
         @JavascriptInterface public void openSetup() { runOnUiThread(MainActivity.this::showSetup); }
         @JavascriptInterface public void checkUpdate() { background.execute(MainActivity.this::checkForUpdate); }
@@ -203,6 +284,8 @@ public final class MainActivity extends Activity implements ClConnection.Listene
             JSONArray channels = new JSONArray();
             for (ChannelState channel : state.channels()) channels.put(channelJson(channel));
             root.put("channels", channels);
+            root.put("outputs", outputsJson(state.outputs()));
+            root.put("dcas", outputsJson(state.dcas()));
         } catch (JSONException ignored) { }
         return root;
     }
@@ -223,13 +306,43 @@ public final class MainActivity extends Activity implements ClConnection.Listene
         JSONArray mixOn = new JSONArray();
         for (boolean on : channel.mixSendOn) mixOn.put(on);
         json.put("mixOn", mixOn);
+        JSONArray mixPre = new JSONArray();
+        for (boolean pre : channel.mixSendPre) mixPre.put(pre);
+        json.put("mixPre", mixPre);
+        json.put("hpfOn", channel.hpfOn);
+        json.put("hpfFreq", channel.hpfFrequencyTenthHz);
+        json.put("hpfSlope", channel.hpfSlope);
+        json.put("dynamic1", dynamicJson(channel.dynamic1));
+        json.put("dynamic2", dynamicJson(channel.dynamic2));
         JSONArray bands = new JSONArray();
         for (EqBand band : channel.eqBands) {
             bands.put(new JSONObject().put("freq", band.frequencyTenthHz)
-                    .put("gain", band.gainHundredthDb).put("q", band.qThousandths));
+                    .put("gain", band.gainHundredthDb).put("q", band.qThousandths).put("type", band.type));
         }
         json.put("eq", bands);
         return json;
+    }
+
+    private JSONArray outputsJson(java.util.List<OutputState> values) throws JSONException {
+        JSONArray result = new JSONArray();
+        for (OutputState output : values) result.put(new JSONObject()
+                .put("kind", output.kind).put("index", output.wireIndex).put("name", output.name)
+                .put("color", output.colorName).put("fader", output.faderHundredthDb).put("on", output.on));
+        return result;
+    }
+
+    private JSONObject dynamicJson(DynamicState dynamic) throws JSONException {
+        return new JSONObject().put("on", dynamic.on).put("type", dynamic.type)
+                .put("threshold", dynamic.thresholdHundredthDb).put("ratio", dynamic.ratioHundredths)
+                .put("range", dynamic.rangeHundredthDb).put("attack", dynamic.attackTenthsMs)
+                .put("hold", dynamic.holdTenthsMs).put("release", dynamic.releaseTenthsMs)
+                .put("outGain", dynamic.outGainHundredthDb).put("knee", dynamic.knee);
+    }
+
+    private OutputState output(String kind, int index) {
+        java.util.List<OutputState> list = "DCA".equals(kind) ? state.dcas() : state.outputs();
+        for (OutputState output : list) if (output.kind.equals(kind) && output.wireIndex == index) return output;
+        return null;
     }
 
     private void publishState() {
@@ -244,7 +357,7 @@ public final class MainActivity extends Activity implements ClConnection.Listene
         form.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(22);
         form.setPadding(padding, dp(8), padding, dp(8));
-        EditText ip = input(prefs.getString("ip", "192.168.0.128"));
+        EditText ip = input(prefs.getString("ip", "192.168.50.138"));
         EditText port = input(String.valueOf(prefs.getInt("port", 49280)));
         port.setInputType(InputType.TYPE_CLASS_NUMBER);
         CheckBox control = new CheckBox(this);

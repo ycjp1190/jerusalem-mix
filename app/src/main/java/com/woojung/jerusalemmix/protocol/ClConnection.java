@@ -5,6 +5,7 @@ import android.os.Looper;
 
 import com.woojung.jerusalemmix.model.ChannelState;
 import com.woojung.jerusalemmix.model.MixerState;
+import com.woojung.jerusalemmix.model.OutputState;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -73,6 +74,7 @@ public final class ClConnection implements AutoCloseable {
             sendRaw("devinfo version");
             sendRaw("devstatus runmode");
             pollVisibleBank();
+            pollOutputOverview();
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(newSocket.getInputStream(), StandardCharsets.US_ASCII))) {
                 String line;
@@ -125,6 +127,24 @@ public final class ClConnection implements AutoCloseable {
         sendVerified(YamahaClProtocol.sendSet(channel, mix, "Level", YamahaClProtocol.clampLevel(hundredthDb)));
     }
 
+    public void setMatrixSendOn(ChannelState channel, int matrix, boolean on) {
+        sendUnverified(YamahaClProtocol.set(channel.protocolRoot() + "/ToMtrx/On", channel.wireIndex, matrix, on ? 1 : 0),
+                "Matrix Send ON");
+    }
+
+    public void setMatrixSendLevel(ChannelState channel, int matrix, int hundredthDb) {
+        sendUnverified(YamahaClProtocol.set(channel.protocolRoot() + "/ToMtrx/Level", channel.wireIndex, matrix,
+                YamahaClProtocol.clampLevel(hundredthDb)), "Matrix Send Level");
+    }
+
+    public void setSendPre(ChannelState channel, int target, boolean pre) {
+        publishWarning("Mix/Matrix Pre/Post는 CL5 명령 경로 현장 검증 전까지 송신하지 않습니다.");
+    }
+
+    public void setOutputUnverified(String description) {
+        publishWarning(description + " 제어는 CL5 명령 경로 현장 검증 전까지 안전 잠금 상태입니다.");
+    }
+
     public void setExperimental(ChannelState channel, String suffix, int y, int value) {
         if (!isExperimentalEnabled()) {
             publishWarning("실험 기능 안전 잠금이 켜져 있습니다.");
@@ -138,6 +158,10 @@ public final class ClConnection implements AutoCloseable {
         publishWarning("+48V 제어는 현장 프로토콜 검증 전까지 안전 잠금 상태입니다.");
     }
 
+    public void warnUnverified(String feature) {
+        publishWarning(feature + " 제어는 CL5 명령 경로 현장 검증 전까지 안전 잠금 상태입니다.");
+    }
+
     public void pollVisibleBank() {
         if (!connected.get()) return;
         int start = state.bank * 8;
@@ -146,14 +170,17 @@ public final class ClConnection implements AutoCloseable {
             ChannelState ch = state.channel(i);
             sendRaw(YamahaClProtocol.channelGet(ch, "Fader/On"));
             sendRaw(YamahaClProtocol.channelGet(ch, "Fader/Level"));
-            if (state.sendsOnFader) {
+            if (state.sendsOnFader && state.selectedMix < 24) {
                 sendRaw(YamahaClProtocol.sendGet(ch, state.selectedMix, "On"));
                 sendRaw(YamahaClProtocol.sendGet(ch, state.selectedMix, "Level"));
+            } else if (state.sendsOnFader && experimentalEnabled) {
+                int matrix = state.selectedMix - 24;
+                sendRaw(YamahaClProtocol.get(ch.protocolRoot() + "/ToMtrx/On", ch.wireIndex, matrix));
+                sendRaw(YamahaClProtocol.get(ch.protocolRoot() + "/ToMtrx/Level", ch.wireIndex, matrix));
             }
-            if (experimentalEnabled) {
-                sendRaw(YamahaClProtocol.channelGet(ch, "Label/Name"));
-                sendRaw(YamahaClProtocol.channelGet(ch, "Label/Color"));
-            }
+            // Label reads are non-mutating and needed in both read-only and control modes.
+            sendRaw(YamahaClProtocol.channelGet(ch, "Label/Name"));
+            sendRaw(YamahaClProtocol.channelGet(ch, "Label/Color"));
         }
     }
 
@@ -170,9 +197,34 @@ public final class ClConnection implements AutoCloseable {
         }
     }
 
+    private void pollOutputOverview() {
+        if (!connected.get() || !experimentalEnabled) return;
+        for (OutputState output : state.outputs()) {
+            if ("MASTER".equals(output.kind)) continue;
+            String root = "MT".equals(output.kind) ? "Mtrx" : "Mix";
+            sendRaw(YamahaClProtocol.get(root + "/Label/Name", output.wireIndex, 0));
+            sendRaw(YamahaClProtocol.get(root + "/Label/Color", output.wireIndex, 0));
+            sendRaw(YamahaClProtocol.get(root + "/Fader/On", output.wireIndex, 0));
+            sendRaw(YamahaClProtocol.get(root + "/Fader/Level", output.wireIndex, 0));
+        }
+        for (OutputState dca : state.dcas()) {
+            sendRaw(YamahaClProtocol.get("Dca/Label/Name", dca.wireIndex, 0));
+            sendRaw(YamahaClProtocol.get("Dca/Fader/On", dca.wireIndex, 0));
+            sendRaw(YamahaClProtocol.get("Dca/Fader/Level", dca.wireIndex, 0));
+        }
+    }
+
     private void sendVerified(String command) {
         if (!isControlEnabled()) {
             publishWarning("읽기 전용입니다. 설정에서 '검증 기능 제어'를 켜세요.");
+            return;
+        }
+        sendRaw(command);
+    }
+
+    private void sendUnverified(String command, String feature) {
+        if (!isExperimentalEnabled()) {
+            publishWarning(feature + "은 현장 검증이 필요한 기능입니다. 설정에서 실험 기능을 허용해야 합니다.");
             return;
         }
         sendRaw(command);

@@ -14,14 +14,20 @@ public final class ChannelState {
     public boolean phantom48;
     public int pan = 0;
     public boolean peqOn = true;
+    public boolean hpfOn = true;
+    public int hpfFrequencyTenthHz = 800;
+    public int hpfSlope = -12;
+    public final DynamicState dynamic1 = new DynamicState("Gate");
+    public final DynamicState dynamic2 = new DynamicState("Compressor");
     public final EqBand[] eqBands = {
             new EqBand(800, 0, 700),
             new EqBand(4000, 0, 1000),
             new EqBand(25000, 0, 1000),
             new EqBand(100000, 0, 700)
     };
-    public final int[] mixSendHundredthDb = new int[24];
-    public final boolean[] mixSendOn = new boolean[24];
+    public final int[] mixSendHundredthDb = new int[32];
+    public final boolean[] mixSendOn = new boolean[32];
+    public final boolean[] mixSendPre = new boolean[32];
 
     public ChannelState(int logicalIndex, int wireIndex, boolean stereo, String name) {
         this.logicalIndex = logicalIndex;
@@ -29,6 +35,7 @@ public final class ChannelState {
         this.stereo = stereo;
         this.name = name;
         Arrays.fill(mixSendHundredthDb, -32768);
+        Arrays.fill(mixSendPre, true);
     }
 
     public String protocolRoot() {

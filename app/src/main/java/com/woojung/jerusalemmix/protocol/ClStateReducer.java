@@ -2,6 +2,7 @@ package com.woojung.jerusalemmix.protocol;
 
 import com.woojung.jerusalemmix.model.ChannelState;
 import com.woojung.jerusalemmix.model.MixerState;
+import com.woojung.jerusalemmix.model.OutputState;
 
 public final class ClStateReducer {
     private final MixerState state;
@@ -13,6 +14,15 @@ public final class ClStateReducer {
     public boolean apply(ProtocolMessage message) {
         if (message.kind() != ProtocolMessage.Kind.VALUE) return false;
         String path = message.parameter();
+        OutputState output = findOutput(path, message.x());
+        if (output != null) {
+            if (path.endsWith("/Fader/Level")) output.faderHundredthDb = message.intValue(output.faderHundredthDb);
+            else if (path.endsWith("/Fader/On")) output.on = message.intValue(output.on ? 1 : 0) != 0;
+            else if (path.endsWith("/Label/Name")) output.name = cleanString(message.value());
+            else if (path.endsWith("/Label/Color")) output.colorName = cleanString(message.value());
+            else return false;
+            return true;
+        }
         ChannelState channel = findChannel(path, message.x());
         if (channel == null) return false;
 
@@ -27,6 +37,8 @@ public final class ClStateReducer {
         else if (path.contains("/PEQ/Band/")) return applyEq(channel, path, message.y(), message);
         else if (path.endsWith("/ToMix/Level") && validMix(message.y())) channel.mixSendHundredthDb[message.y()] = message.intValue(channel.mixSendHundredthDb[message.y()]);
         else if (path.endsWith("/ToMix/On") && validMix(message.y())) channel.mixSendOn[message.y()] = message.intValue(channel.mixSendOn[message.y()] ? 1 : 0) != 0;
+        else if (path.endsWith("/ToMtrx/Level") && validMatrix(message.y())) channel.mixSendHundredthDb[24 + message.y()] = message.intValue(channel.mixSendHundredthDb[24 + message.y()]);
+        else if (path.endsWith("/ToMtrx/On") && validMatrix(message.y())) channel.mixSendOn[24 + message.y()] = message.intValue(channel.mixSendOn[24 + message.y()] ? 1 : 0) != 0;
         else return false;
         return true;
     }
@@ -49,6 +61,15 @@ public final class ClStateReducer {
         return null;
     }
 
+    private OutputState findOutput(String path, int wireIndex) {
+        String kind = path.contains("/Mtrx/") ? "MT" : path.contains("/Dca/") ? "DCA" :
+                (path.contains("/Mix/") && !path.contains("/ToMix/")) ? "MIX" : "";
+        if (kind.isEmpty()) return null;
+        java.util.List<OutputState> values = "DCA".equals(kind) ? state.dcas() : state.outputs();
+        for (OutputState output : values) if (output.kind.equals(kind) && output.wireIndex == wireIndex) return output;
+        return null;
+    }
+
     private static String cleanString(String value) {
         String result = value.trim();
         if (result.length() >= 2 && result.startsWith("\"") && result.endsWith("\"")) {
@@ -60,4 +81,6 @@ public final class ClStateReducer {
     private static boolean validMix(int mix) {
         return mix >= 0 && mix < 24;
     }
+
+    private static boolean validMatrix(int matrix) { return matrix >= 0 && matrix < 8; }
 }

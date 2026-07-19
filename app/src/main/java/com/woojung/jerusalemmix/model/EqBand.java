@@ -5,6 +5,7 @@ public final class EqBand {
     public int gainHundredthDb;
     public int qThousandths;
     public boolean bypassed;
+    public String type = "Bell";
 
     public EqBand(int frequencyTenthHz, int gainHundredthDb, int qThousandths) {
         this.frequencyTenthHz = frequencyTenthHz;

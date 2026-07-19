@@ -1,81 +1,71 @@
-(function () {
-  "use strict";
-  const COLORS={red:"#d73f49",yellow:"#dfb633",green:"#42b766",skyblue:"#38b9d9",cyan:"#38b9d9",blue:"#3575ca",purple:"#8b5ac8",pink:"#d45b9e",magenta:"#d45b9e",orange:"#df7b2e",off:"#626b76"};
-  const names=["KICK","SNARE","HAT","TOM 1","TOM 2","BASS","E.GTR","A.GTR","KEY L","KEY R","LEAD","VOCAL 1","VOCAL 2","VOCAL 3","PASTOR","MC"];
-  const colorNames=["Red","Yellow","Green","SkyBlue","Blue","Purple","Pink","Orange"];
-
-  function channel(index,stereo=false){return{index,stereo,name:index<names.length?names[index]:(stereo?`ST ${index-71}`:`CH ${index+1}`),color:colorNames[index%8],fader:index<16?-600-(index%4)*250:-1200,on:true,gain:0,phantom:false,pan:0,peqOn:true,mixLevels:Array(24).fill(-32768),mixOn:Array(24).fill(false),eq:[{freq:800,gain:0,q:700},{freq:4000,gain:0,q:1000},{freq:25000,gain:0,q:1000},{freq:100000,gain:0,q:700}]};}
-  const demoChannels=[...Array.from({length:72},(_,i)=>channel(i)),...Array.from({length:8},(_,i)=>channel(72+i,true))];
-  let state={platform:"web",connection:"DEMO",connectionDetail:"DESIGN DEMO",controlEnabled:false,experimentalEnabled:false,bank:0,selectedChannel:0,selectedMix:0,sendsOnFader:false,channels:demoChannels};
-  const native=window.JerusalemNative||null;
-  const Core=window.JerusalemCore;
-  const $=id=>document.getElementById(id);
-  const strips=$("strips"),banks=$("banks"),mixModal=$("mixModal"),detailModal=$("detailModal");
-
-  function invoke(method,...args){if(native&&typeof native[method]==="function")return native[method](...args);return null;}
-  const clamp=Core.clamp,levelRatio=Core.levelRatio,db=Core.formatDb;
-  function color(name){return COLORS[String(name||"").toLowerCase()]||COLORS.blue;}
-  function textColor(hex){const n=parseInt(hex.slice(1),16);const r=n>>16,g=n>>8&255,b=n&255;return .2126*r+.7152*g+.0722*b>150?"#091018":"#fff";}
-  function number(ch){return ch.stereo?`ST ${ch.index-71}`:`CH ${ch.index+1}`;}
-
-  function render(){
-    document.body.classList.toggle("native",state.platform==="android");
-    $("statusText").textContent=state.connectionDetail||"DESIGN DEMO";
-    $("platformText").textContent=state.platform==="android"?"ANDROID · LOCAL UI":"WEB · 콘솔 미연결";
-    $("statusDot").className=`status-dot ${String(state.connection).toLowerCase()}`;
-    $("mixButton").classList.toggle("hidden",!state.sendsOnFader);
-    $("mixButton").textContent=`MIX ${state.selectedMix+1}`;
-    $("sofButton").textContent=state.sendsOnFader?"EXIT SENDS":"SENDS ON FADER";
-    $("sofButton").classList.toggle("active",state.sendsOnFader);
-    renderStrips();renderBanks();
-    if(!detailModal.hidden)renderDetail();
-  }
-
-  function renderStrips(){
-    strips.replaceChildren();const start=state.bank*8;
-    state.channels.slice(start,start+8).forEach(ch=>{
-      const value=state.sendsOnFader?ch.mixLevels[state.selectedMix]:ch.fader;
-      const on=state.sendsOnFader?ch.mixOn[state.selectedMix]:ch.on;
-      const el=document.createElement("article");el.className=`strip${ch.index===state.selectedChannel?" selected":""}${state.sendsOnFader?" sends":""}`;
-      const c=color(ch.color);el.style.setProperty("--ch-color",c);el.style.setProperty("--ch-text",textColor(c));el.style.setProperty("--level",levelRatio(value));
-      el.innerHTML=`<div class="color-line"></div><button class="channel-name" type="button">${escapeHtml(ch.name)}</button><div class="channel-number">${number(ch)}</div><div class="fader-zone"><div class="fader-track"></div><div class="fader-scale">${[10,0,-10,-20,-40,-60].map(x=>`<i data-db="${x>0?"+":""}${x}"></i>`).join("")}</div><div class="fader-cap"></div><input class="fader" type="range" min="-6000" max="1000" step="10" value="${value<=-32000?-6000:value}" aria-label="${escapeHtml(ch.name)} fader"></div><output class="level-value">${db(value)} dB</output><button class="on-button ${on?"":"off"}" type="button">${state.sendsOnFader?(on?"SEND ON":"SEND OFF"):(on?"MUTE":"MUTED")}</button>`;
-      el.querySelector(".channel-name").addEventListener("click",()=>selectChannel(ch.index));
-      const slider=el.querySelector(".fader"),cap=el.querySelector(".fader-cap"),out=el.querySelector(".level-value");
-      const set=(finished)=>{const v=Number(slider.value);if(state.sendsOnFader)ch.mixLevels[state.selectedMix]=v;else ch.fader=v;cap.parentElement.parentElement.style.setProperty("--level",levelRatio(v));out.textContent=`${db(v)} dB`;invoke("setFader",ch.index,v,finished);};
-      slider.addEventListener("input",()=>set(false));slider.addEventListener("change",()=>set(true));
-      el.querySelector(".on-button").addEventListener("click",()=>{if(state.sendsOnFader){ch.mixOn[state.selectedMix]=!ch.mixOn[state.selectedMix];invoke("setSendOn",ch.index,state.selectedMix,ch.mixOn[state.selectedMix]);}else{ch.on=!ch.on;invoke("setChannelOn",ch.index,ch.on);}renderStrips();});
-      strips.append(el);
-    });
-  }
-
-  function renderBanks(){banks.replaceChildren();for(let i=0;i<10;i++){const b=document.createElement("button");b.type="button";b.className=i===state.bank?"active":"";b.textContent=i===9?"ST 1–8":`${i*8+1}–${i*8+8}`;b.addEventListener("click",()=>{state.bank=i;invoke("setBank",i);render();});banks.append(b);}}
-  function selectChannel(index){state.selectedChannel=index;invoke("selectChannel",index);render();}
-
-  function openMix(){mixModal.hidden=false;const grid=$("mixGrid");grid.replaceChildren();for(let i=0;i<24;i++){const b=document.createElement("button");b.type="button";b.className=i===state.selectedMix?"active":"";b.textContent=`MIX ${i+1}`;b.addEventListener("click",()=>{state.selectedMix=i;invoke("setMix",i);mixModal.hidden=true;render();});grid.append(b);}}
-  function openDetail(){detailModal.hidden=false;renderDetail();}
-  function renderDetail(){
-    const ch=state.channels[state.selectedChannel];if(!ch)return;$("detailTitle").textContent=`${number(ch)} · ${ch.name}`;
-    bindRange("gainSlider",ch.gain,v=>`${v>=0?"+":""}${(v/100).toFixed(1)} dB`,v=>{ch.gain=v;invoke("setGain",ch.index,v)},"gainValue");
-    bindRange("panSlider",ch.pan,Core.panText,v=>{ch.pan=v;invoke("setPan",ch.index,v)},"panValue");
-    $("peqOn").checked=ch.peqOn;$("peqOn").onchange=e=>{ch.peqOn=e.target.checked;invoke("setPeqOn",ch.index,ch.peqOn);drawEq(ch)};
-    renderEqBands(ch);drawEq(ch);
-  }
-  function bindRange(id,value,format,onInput,outputId){const input=$(id),out=$(outputId);input.value=value;out.value=format(value);input.oninput=()=>{const v=Number(input.value);out.value=format(v);onInput(v);};}
-  function renderEqBands(ch){const root=$("eqBands");root.replaceChildren();const bandColors=["#f0c443","#57d886","#44bff0","#dc6bb1"];ch.eq.forEach((band,i)=>{const card=document.createElement("div");card.className="eq-band";card.style.setProperty("--band",bandColors[i]);card.innerHTML=`<strong>BAND ${i+1}</strong>${eqControl("FREQ",i,"freq",200,200000,band.freq)}${eqControl("GAIN",i,"gain",-1800,1800,band.gain)}${eqControl("Q",i,"q",100,16000,band.q)}`;card.querySelectorAll("input").forEach(input=>input.addEventListener("input",()=>{const key=input.dataset.key,v=Number(input.value);band[key]=v;input.previousElementSibling.value=eqValue(key,v);invoke("setEq",ch.index,i,key==="freq"?"Freq":key==="gain"?"Gain":"Q",v);drawEq(ch);}));root.append(card);});}
-  function eqControl(label,i,key,min,max,value){return `<label>${label}<output>${eqValue(key,value)}</output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${key==="freq"?100:key==="gain"?10:50}" value="${value}"></label>`;}
-  function eqValue(key,v){if(key==="freq")return v>=10000?`${(v/10000).toFixed(1)}k`:`${Math.round(v/10)}Hz`;if(key==="gain")return `${v>=0?"+":""}${(v/100).toFixed(1)}`;return (v/1000).toFixed(2);}
-  function drawEq(ch){const canvas=$("eqGraph"),ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.strokeStyle="#26313b";ctx.lineWidth=1;for(let i=0;i<=8;i++){ctx.beginPath();ctx.moveTo(i*w/8,0);ctx.lineTo(i*w/8,h);ctx.stroke()}for(let i=0;i<=6;i++){ctx.beginPath();ctx.moveTo(0,i*h/6);ctx.lineTo(w,i*h/6);ctx.stroke()}ctx.strokeStyle=ch.peqOn?"#48c7ef":"#68737e";ctx.lineWidth=4;ctx.beginPath();for(let x=0;x<w;x++){const freq=20*Math.pow(1000,x/w);let gain=0;ch.eq.forEach(b=>{const center=b.freq/10,q=Math.max(.1,b.q/1000),distance=Math.log2(freq/center);gain+=(b.gain/100)*Math.exp(-distance*distance*q*q*2)});const y=h/2-clamp(gain,-18,18)/36*h;if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}ctx.stroke();}
-  function escapeHtml(value){return String(value).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
-  function closeModal(){mixModal.hidden=true;detailModal.hidden=true;}
-
-  $("sofButton").addEventListener("click",()=>{state.sendsOnFader=!state.sendsOnFader;invoke("setSendsOnFader",state.sendsOnFader);render();});
-  $("mixButton").addEventListener("click",openMix);$("detailButton").addEventListener("click",openDetail);
-  $("setupButton").addEventListener("click",()=>native?invoke("openSetup"):alert("웹 디자인판은 실제 CL5 연결 설정을 제공하지 않습니다.\n실제 제어는 Android APK에서만 가능합니다."));
-  document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",closeModal));
-  [mixModal,detailModal].forEach(m=>m.addEventListener("click",e=>{if(e.target===m)closeModal()}));
-  $("phantomButton").addEventListener("click",()=>invoke("requestPhantom",state.selectedChannel,!state.channels[state.selectedChannel].phantom));
-  window.JerusalemMix={receive(json){try{state=JSON.parse(json);render()}catch(error){console.error(error)}},closeModal};
-  if(native){try{state=JSON.parse(native.getState());}catch(error){console.error("Native state unavailable",error)}}
-  render();
-  if(location.protocol.startsWith("http")&&"serviceWorker" in navigator){addEventListener("load",async()=>{try{const r=await navigator.serviceWorker.register("sw.js");await r.update()}catch(error){console.warn("Offline cache unavailable",error)}})}
+(function(){
+"use strict";
+const C=window.JerusalemCore,$=id=>document.getElementById(id),native=window.JerusalemNative||null;
+const COLORS={red:"#d73f49",yellow:"#dfb633",green:"#42b766",skyblue:"#38b9d9",cyan:"#38b9d9",blue:"#3575ca",purple:"#8b5ac8",pink:"#d45b9e",magenta:"#d45b9e",orange:"#df7b2e",off:"#626b76"};
+const PALETTE=["Red","Yellow","Green","SkyBlue","Blue","Purple","Pink","Orange"];
+const INPUT_NAMES=["KICK","SNARE","HI HAT","TOM","FL TOM","OH-L","OH-R","BASS","E.GTR","A.GTR","KEY L","KEY R","LEAD","VOCAL 1","VOCAL 2","VOCAL 3","PASTOR","MC"];
+const MIX_NAMES=["Choir","Center","Front Fill","Broadcast","In-Ear 1","In-Ear 2","In-Ear 3","In-Ear 4","Band Mon 1","Band Mon 2","Pastor Mon","Talkback","FX Send 1","FX Send 2","Record","Lobby"];
+const MT_NAMES=["Main L","Main R","Center","Delay","Lobby","Broadcast","Record L","Record R"];
+const bandColors=["#f0c443","#57d886","#44bff0","#dc6bb1"];
+function dyn(type){return{on:false,type,threshold:-2600,ratio:200,range:-5600,attack:300,hold:20,release:3040,outGain:0,knee:0}}
+function channel(i,stereo=false){return{index:i,stereo,name:INPUT_NAMES[i]||(stereo?`ST ${i-71}`:`CH ${i+1}`),color:PALETTE[i%8],fader:i<18?-600-(i%4)*250:-1200,on:true,gain:0,phantom:false,pan:0,peqOn:true,hpfOn:true,hpfFreq:800,hpfSlope:-12,dynamic1:dyn("Gate"),dynamic2:dyn("Compressor"),mixLevels:Array(32).fill(-32768),mixOn:Array(32).fill(false),mixPre:Array(32).fill(true),eq:[{freq:800,gain:0,q:700,type:"Bell"},{freq:4000,gain:0,q:1000,type:"Bell"},{freq:25000,gain:0,q:1000,type:"Bell"},{freq:100000,gain:0,q:700,type:"Bell"}]}}
+function out(kind,index,name,color){return{kind,index,name,color,fader:-1200,on:true}}
+const demoChannels=[...Array.from({length:72},(_,i)=>channel(i)),...Array.from({length:8},(_,i)=>channel(72+i,true))];
+const demoOutputs=[...Array.from({length:24},(_,i)=>out("MIX",i,MIX_NAMES[i]||`Mix ${i+1}`,PALETTE[i%8])),...Array.from({length:8},(_,i)=>out("MT",i,MT_NAMES[i],PALETTE[(i+2)%8])),out("MASTER",0,"Stereo","Red"),out("MASTER",1,"Mono","Orange")];
+const demoDcas=Array.from({length:16},(_,i)=>out("DCA",i,`DCA ${i+1}`,PALETTE[(i+4)%8]));
+let state={platform:"web",connection:"DEMO",connectionDetail:"DESIGN DEMO",controlEnabled:false,experimentalEnabled:false,bank:0,selectedChannel:0,selectedMix:0,sendsOnFader:false,channels:demoChannels,outputs:demoOutputs,dcas:demoDcas,viewGroup:"input",viewBank:0};
+let detailTab="head",hideUnused=false,touchStartX=0;
+const strips=$("strips"),banks=$("banks"),mixModal=$("mixModal"),detailModal=$("detailModal");
+const invoke=(method,...args)=>native&&typeof native[method]==="function"?native[method](...args):null;
+const esc=v=>String(v).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
+const hexColor=name=>COLORS[String(name||"").toLowerCase()]||COLORS.blue;
+function contrast(hex){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return .2126*r+.7152*g+.0722*b>150?"#091018":"#fff"}
+const inputNumber=ch=>ch.stereo?`ST ${ch.index-71}`:`CH ${ch.index+1}`;
+const targetName=i=>i<24?(state.outputs[i]?.name||`Mix ${i+1}`):(state.outputs[24+i-24]?.name||`Matrix ${i-23}`);
+const targetLabel=i=>`${i<24?`MIX ${i+1}`:`MT ${i-23}`} - ${targetName(i)}`;
+function bankDefs(){if(state.viewGroup==="input")return Array.from({length:10},(_,i)=>({label:i===9?"ST 1-8":`CH ${i*8+1}-${i*8+8}`,start:i*8}));if(state.viewGroup==="output")return[{label:"MIX 1-8",start:0},{label:"MIX 9-16",start:8},{label:"MIX 17-24",start:16},{label:"MT 1-8",start:24},{label:"MASTER",start:32}];return[{label:"DCA 1-8",start:0},{label:"DCA 9-16",start:8}]}
+function currentItems(){const def=bankDefs()[C.clamp(state.viewBank,0,bankDefs().length-1)];if(state.viewGroup==="input")return state.channels.slice(def.start,def.start+8);if(state.viewGroup==="output")return state.outputs.slice(def.start,def.start+8);return state.dcas.slice(def.start,def.start+8)}
+function render(){
+ document.body.classList.toggle("native",state.platform==="android");
+ $("statusText").textContent=state.connectionDetail||"DESIGN DEMO";$("platformText").textContent=state.platform==="android"?"ANDROID · LOCAL UI":"WEB · 콘솔 미연결";$("statusDot").className=`status-dot ${String(state.connection).toLowerCase()}`;
+ $("mixButton").classList.toggle("hidden",!state.sendsOnFader);$("mixButton").textContent=targetLabel(state.selectedMix);$("sofButton").textContent=state.sendsOnFader?"EXIT SENDS":"SENDS ON FADER";$("sofButton").classList.toggle("active",state.sendsOnFader);
+ document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===state.viewGroup));renderBanks();renderStrips();if(!detailModal.hidden)renderDetail();
+}
+function renderBanks(){banks.replaceChildren();const defs=bankDefs();state.viewBank=C.clamp(state.viewBank,0,defs.length-1);defs.forEach((def,i)=>{const b=document.createElement("button");b.type="button";b.className=i===state.viewBank?"active":"";b.textContent=def.label;b.addEventListener("click",()=>setBank(i));banks.append(b)});requestAnimationFrame(()=>banks.querySelector(".active")?.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"}))}
+function setBank(i){state.viewBank=C.clamp(i,0,bankDefs().length-1);if(state.viewGroup==="input"){state.bank=state.viewBank;invoke("setBank",state.bank)}render()}
+function changeView(view){state.viewGroup=view;state.viewBank=0;if(view!=="input"&&state.sendsOnFader){state.sendsOnFader=false;invoke("setSendsOnFader",false)}render()}
+function itemNumber(item){if(state.viewGroup==="input")return inputNumber(item);if(item.kind==="MIX")return`MIX ${item.index+1}`;if(item.kind==="MT")return`MT ${item.index+1}`;if(item.kind==="DCA")return`DCA ${item.index+1}`;return item.index===0?"STEREO":"MONO"}
+function renderStrips(){strips.replaceChildren();currentItems().forEach(item=>{
+ const input=state.viewGroup==="input",sendMode=input&&state.sendsOnFader,value=sendMode?item.mixLevels[state.selectedMix]:item.fader,on=sendMode?item.mixOn[state.selectedMix]:item.on,c=hexColor(item.color);
+ const el=document.createElement("article");el.className=`strip${input&&item.index===state.selectedChannel?" selected":""}${sendMode?" sends":""}`;el.style.setProperty("--ch-color",c);el.style.setProperty("--ch-text",contrast(c));el.style.setProperty("--level",C.levelRatio(value));
+ el.innerHTML=`<div class="color-line"></div><button class="channel-name" type="button">${esc(item.name)}</button><div class="channel-number">${itemNumber(item)}</div><button class="on-button ${on?"":"off"}" type="button">${sendMode?(on?"SEND ON":"SEND OFF"):(on?"ON / MUTE":"MUTED")}</button>${sendMode?`<button class="pre-button ${item.mixPre[state.selectedMix]?"active":""}" type="button">${item.mixPre[state.selectedMix]?"PRE":"POST"}</button>`:""}<div class="fader-zone"><div class="fader-track"></div><div class="fader-scale">${[10,0,-10,-20,-40,-60].map(x=>`<i data-db="${x>0?"+":""}${x}"></i>`).join("")}</div><div class="fader-cap"></div><input class="fader" type="range" min="-6000" max="1000" step="10" value="${value<=-32000?-6000:value}" aria-label="${esc(item.name)} fader"></div><output class="level-value">${C.formatDb(value)} dB</output>`;
+ if(input)el.querySelector(".channel-name").addEventListener("click",()=>{state.selectedChannel=item.index;invoke("selectChannel",item.index);render()});
+ const slider=el.querySelector(".fader"),outValue=el.querySelector(".level-value");const set=finished=>{const v=Number(slider.value);if(sendMode)item.mixLevels[state.selectedMix]=v;else item.fader=v;el.style.setProperty("--level",C.levelRatio(v));outValue.textContent=`${C.formatDb(v)} dB`;if(input)invoke("setFader",item.index,v,finished);else invoke("setOutputFader",item.kind,item.index,v)};slider.addEventListener("input",()=>set(false));slider.addEventListener("change",()=>set(true));
+ el.querySelector(".on-button").addEventListener("click",()=>{if(sendMode){item.mixOn[state.selectedMix]=!item.mixOn[state.selectedMix];invoke("setSendOn",item.index,state.selectedMix,item.mixOn[state.selectedMix])}else{item.on=!item.on;if(input)invoke("setChannelOn",item.index,item.on);else invoke("setOutputOn",item.kind,item.index,item.on)}renderStrips()});
+ el.querySelector(".pre-button")?.addEventListener("click",()=>{item.mixPre[state.selectedMix]=!item.mixPre[state.selectedMix];invoke("setSendPre",item.index,state.selectedMix,item.mixPre[state.selectedMix]);renderStrips()});strips.append(el)
+ })}
+function openTargets(){mixModal.hidden=false;const grid=$("mixGrid");grid.replaceChildren();for(let i=0;i<32;i++){const b=document.createElement("button");b.type="button";b.className=i===state.selectedMix?"active":"";b.textContent=targetLabel(i);b.addEventListener("click",()=>{state.selectedMix=i;invoke("setMix",i);mixModal.hidden=true;render()});grid.append(b)}}
+function openDetail(){detailModal.hidden=false;renderDetail()}
+function renderDetail(){const ch=state.channels[state.selectedChannel];if(!ch)return;$("detailTitle").textContent=`${inputNumber(ch)} · ${ch.name}`;document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===detailTab));document.querySelectorAll("[data-page]").forEach(p=>p.hidden=p.dataset.page!==detailTab);if(detailTab==="head")renderHead(ch);if(detailTab==="dynamic")renderDynamics(ch);if(detailTab==="peq")renderPeq(ch);if(detailTab==="sends")renderChannelSends(ch)}
+function bindRange(id,value,format,onInput,outputId){const input=$(id),output=$(outputId);input.value=value;output.value=format(value);input.oninput=()=>{const v=Number(input.value);output.value=format(v);onInput(v)}}
+function renderHead(ch){bindRange("gainSlider",ch.gain,v=>`${v>=0?"+":""}${(v/100).toFixed(1)} dB`,v=>{ch.gain=v;invoke("setGain",ch.index,v)},"gainValue");bindRange("panSlider",ch.pan,C.panText,v=>{ch.pan=v;invoke("setPan",ch.index,v)},"panValue")}
+function dynamicTypes(n){return n===1?["Gate","Ducking","Compressor","Expander"]:["Compressor","Compander-H","Compander-S","De-esser"]}
+function renderDynamics(ch){const root=$("dynamicEditors");root.replaceChildren();[ch.dynamic1,ch.dynamic2].forEach((d,i)=>{const n=i+1,card=document.createElement("section");card.className="dynamic-card";card.style.setProperty("--dyn-color",i?"#55ef5a":"#f1df2e");card.innerHTML=`<header class="dynamic-head"><strong>DYN ${n}</strong><select data-p="type">${dynamicTypes(n).map(x=>`<option ${x===d.type?"selected":""}>${x}</option>`).join("")}</select><label><input data-p="on" type="checkbox" ${d.on?"checked":""}> DYN ON</label></header><div class="dyn-graph"></div><div class="dynamic-controls">${dynRange("THRESHOLD","threshold",-8000,0,d.threshold,10)}${n===1?dynRange("RANGE","range",-7000,0,d.range,10):dynRange("RATIO","ratio",100,2000,d.ratio,10)}${dynRange("ATTACK","attack",0,8000,d.attack,10)}${n===1?dynRange("HOLD","hold",0,10000,d.hold,10):dynRange("OUT GAIN","outGain",-1800,1800,d.outGain,10)}${dynRange("RELEASE","release",50,10000,d.release,10)}${n===2?dynRange("KNEE","knee",0,5,d.knee,1):""}</div>`;card.querySelectorAll("input,select").forEach(control=>control.addEventListener("input",()=>{const p=control.dataset.p,v=control.type==="checkbox"?(control.checked?1:0):control.value;d[p]=control.type==="checkbox"?control.checked:(p==="type"?v:Number(v));invoke("setDynamic",ch.index,n,p,String(v));const o=control.previousElementSibling;if(o?.tagName==="OUTPUT")o.value=dynValue(p,Number(v))}));root.append(card)})}
+function dynRange(label,key,min,max,value,step){return`<label>${label}<output>${dynValue(key,value)}</output><input data-p="${key}" type="range" min="${min}" max="${max}" value="${value}" step="${step}"></label>`}
+function dynValue(key,v){if(["threshold","range","outGain"].includes(key))return`${(v/100).toFixed(1)}dB`;if(key==="ratio")return`${(v/100).toFixed(1)}:1`;if(key==="knee")return v?String(v):"HARD";return`${(v/10).toFixed(1)}ms`}
+function renderPeq(ch){$("peqOn").checked=ch.peqOn;$("peqOn").onchange=e=>{ch.peqOn=e.target.checked;invoke("setPeqOn",ch.index,ch.peqOn);drawEq(ch)};$("hpfOn").checked=ch.hpfOn;$("hpfOn").onchange=e=>{ch.hpfOn=e.target.checked;sendHpf(ch);drawEq(ch)};bindRange("hpfSlider",ch.hpfFreq,v=>`${Math.round(v/10)}Hz`,v=>{ch.hpfFreq=v;sendHpf(ch);drawEq(ch)},"hpfValue");$("hpfSlope").value=ch.hpfSlope;$("hpfSlope").onchange=e=>{ch.hpfSlope=Number(e.target.value);sendHpf(ch);drawEq(ch)};renderEqBands(ch);drawEq(ch)}
+function sendHpf(ch){invoke("setHpf",ch.index,ch.hpfOn,ch.hpfFreq,ch.hpfSlope)}
+function renderEqBands(ch){const root=$("eqBands");root.replaceChildren();ch.eq.forEach((band,i)=>{const card=document.createElement("div");card.className="eq-band";card.style.setProperty("--band",bandColors[i]);const types=i===0?["Bell","Shelf"]:i===3?["Bell","Shelf","LPF"]:["Bell"];card.innerHTML=`<strong>BAND ${i+1}</strong><label>TYPE<select data-key="type">${types.map(x=>`<option ${x===band.type?"selected":""}>${x}</option>`).join("")}</select></label>${eqControl("FREQ","freq",200,200000,band.freq,100)}${band.type==="LPF"?"":eqControl("GAIN","gain",-1800,1800,band.gain,10)}${["Shelf","LPF"].includes(band.type)?"":eqControl("Q","q",100,16000,band.q,50)}`;card.querySelectorAll("input,select").forEach(input=>input.addEventListener("input",()=>{const key=input.dataset.key;if(key==="type"){band.type=input.value;invoke("setEqType",ch.index,i,band.type);renderEqBands(ch)}else{const v=Number(input.value);band[key]=v;input.previousElementSibling.value=eqValue(key,v);invoke("setEq",ch.index,i,key==="freq"?"Freq":key==="gain"?"Gain":"Q",v)}drawEq(ch)}));root.append(card)})}
+function eqControl(label,key,min,max,value,step){return`<label>${label}<output>${eqValue(key,value)}</output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"></label>`}
+function eqValue(key,v){if(key==="freq")return v>=10000?`${(v/10000).toFixed(1)}k`:`${Math.round(v/10)}Hz`;if(key==="gain")return`${v>=0?"+":""}${(v/100).toFixed(1)}`;return(v/1000).toFixed(2)}
+const freqX=(freq,w)=>Math.log(freq/20)/Math.log(1000)*w;
+function drawEq(ch){const canvas=$("eqGraph"),ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.strokeStyle="#34404a";ctx.lineWidth=1;[20,50,100,200,500,1000,2000,5000,10000,20000].forEach(f=>{const x=freqX(f,w);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();ctx.fillStyle="#8995a1";ctx.font="18px sans-serif";ctx.fillText(f>=1000?`${f/1000}k`:`${f}`,x+4,18)});for(let db=-18;db<=18;db+=6){const y=h/2-db/36*h;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}ctx.strokeStyle=ch.peqOn?"#45e554":"#68737e";ctx.fillStyle="#174d16aa";ctx.lineWidth=4;ctx.beginPath();let firstY=h/2;for(let x=0;x<w;x++){const freq=20*Math.pow(1000,x/w),gain=responseAt(ch,freq);const y=h/2-C.clamp(gain,-18,18)/36*h;if(x===0){ctx.moveTo(x,y);firstY=y}else ctx.lineTo(x,y)}ctx.stroke();ctx.lineTo(w,h/2);ctx.lineTo(0,h/2);ctx.closePath();ctx.fill();renderMarkers(ch,w,h)}
+function responseAt(ch,freq){let gain=0;if(ch.hpfOn){const fc=ch.hpfFreq/10;if(freq<fc)gain-=Math.min(36,Math.log2(fc/freq)*Math.abs(ch.hpfSlope))}ch.eq.forEach(b=>{const fc=b.freq/10,g=b.gain/100;if(b.type==="LPF"){if(freq>fc)gain-=Math.min(36,Math.log2(freq/fc)*12)}else if(b.type==="Shelf"){const high=b===ch.eq[3];const amount=1/(1+Math.exp((high?-1:1)*Math.log2(freq/fc)*5));gain+=g*amount}else{const d=Math.log2(freq/fc),q=Math.max(.1,b.q/1000);gain+=g*Math.exp(-d*d*q*q*2)}});return gain}
+function renderMarkers(ch,w,h){const root=$("eqMarkers");root.replaceChildren();const markers=[{label:"HP",freq:ch.hpfFreq/10,gain:0,color:"#ffdf49"},...ch.eq.map((b,i)=>({label:b.type==="LPF"?"LP":String(i+1),freq:b.freq/10,gain:b.type==="LPF"?0:b.gain/100,color:bandColors[i]}))];markers.forEach(m=>{const el=document.createElement("div");el.className="eq-marker";el.style.setProperty("--band",m.color);el.style.left=`${freqX(m.freq,w)/w*100}%`;el.style.top=`${(h/2-C.clamp(m.gain,-18,18)/36*h)/h*100}%`;el.innerHTML=`${m.label}<small>${eqValue("freq",m.freq*10)}</small>`;root.append(el)})}
+function renderChannelSends(ch){const root=$("channelSends");root.replaceChildren();for(let i=0;i<32;i++){if(hideUnused&&!ch.mixOn[i]&&ch.mixLevels[i]<=-32000)continue;const card=document.createElement("article");card.className="send-card";card.innerHTML=`<strong>${i<24?`MIX ${i+1}`:`MT ${i-23}`}</strong><small>${esc(targetName(i))}</small><output>${C.formatDb(ch.mixLevels[i])} dB</output><input type="range" min="-6000" max="1000" step="10" value="${ch.mixLevels[i]<=-32000?-6000:ch.mixLevels[i]}"><button class="send-on ${ch.mixOn[i]?"active":""}" type="button">${ch.mixOn[i]?"ON":"OFF"}</button><button class="send-pre ${ch.mixPre[i]?"active":""}" type="button">${ch.mixPre[i]?"PRE":"POST"}</button>`;const slider=card.querySelector("input"),level=card.querySelector("output");slider.addEventListener("input",()=>{ch.mixLevels[i]=Number(slider.value);level.value=`${C.formatDb(ch.mixLevels[i])} dB`;invoke("setSendLevel",ch.index,i,ch.mixLevels[i],false)});slider.addEventListener("change",()=>invoke("setSendLevel",ch.index,i,ch.mixLevels[i],true));card.querySelector(".send-on").addEventListener("click",()=>{ch.mixOn[i]=!ch.mixOn[i];invoke("setSendOn",ch.index,i,ch.mixOn[i]);renderChannelSends(ch)});card.querySelector(".send-pre").addEventListener("click",()=>{ch.mixPre[i]=!ch.mixPre[i];invoke("setSendPre",ch.index,i,ch.mixPre[i]);renderChannelSends(ch)});root.append(card)}}
+function closeModal(){mixModal.hidden=true;detailModal.hidden=true}
+$("sofButton").addEventListener("click",()=>{if(state.viewGroup!=="input")changeView("input");state.sendsOnFader=!state.sendsOnFader;invoke("setSendsOnFader",state.sendsOnFader);render()});$("mixButton").addEventListener("click",openTargets);$("detailButton").addEventListener("click",openDetail);$("setupButton").addEventListener("click",()=>native?invoke("openSetup"):alert("웹 디자인판은 실제 CL5에 연결하지 않습니다.\n실제 제어는 Android APK에서만 가능합니다."));
+document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>changeView(b.dataset.view)));$("prevBank").addEventListener("click",()=>setBank(state.viewBank-1));$("nextBank").addEventListener("click",()=>setBank(state.viewBank+1));document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{detailTab=b.dataset.tab;renderDetail()}));$("hideUnused").addEventListener("click",()=>{hideUnused=!hideUnused;$("hideUnused").classList.toggle("active",hideUnused);renderChannelSends(state.channels[state.selectedChannel])});document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",closeModal));[mixModal,detailModal].forEach(m=>m.addEventListener("click",e=>{if(e.target===m)closeModal()}));
+strips.addEventListener("touchstart",e=>touchStartX=e.changedTouches[0].screenX,{passive:true});strips.addEventListener("touchend",e=>{const dx=e.changedTouches[0].screenX-touchStartX;if(Math.abs(dx)>70)setBank(state.viewBank+(dx<0?1:-1))},{passive:true});
+window.JerusalemMix={receive(json){try{const next=JSON.parse(json);state={...state,...next,viewGroup:state.viewGroup,viewBank:state.viewBank};render()}catch(error){console.error(error)}},closeModal};if(native)try{state={...state,...JSON.parse(native.getState())}}catch(error){console.error("Native state unavailable",error)}render();if(location.protocol.startsWith("http")&&"serviceWorker"in navigator)addEventListener("load",async()=>{try{const r=await navigator.serviceWorker.register("sw.js");await r.update()}catch(error){console.warn("Offline cache unavailable",error)}});
 })();

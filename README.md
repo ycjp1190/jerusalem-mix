@@ -9,11 +9,20 @@ Galaxy S26용 Yamaha CL5 원격 제어 실험 앱입니다.
 - 웹판: 모의 데이터만 사용하며 실제 콘솔 명령을 보내지 않음
 - APK: 공용 화면을 앱 내부에 포장하므로 인터넷 없이 실행 가능
 
+## 디자인 프리뷰 기능
+
+- 입력 CH 1-72, ST 1-8 뱅크와 좌우 스와이프
+- 출력 Mix 1-24, Matrix 1-8, Master 및 DCA 1-16 뱅크
+- Mix/Matrix Sends on Fader 대상 이름, ON, 레벨, Pre/Post 표시
+- Selected CH 4탭: Head Amp+Pan, Dynamics 1+2, PEQ+HPF, Mix/Matrix Sends
+- PEQ 밴드 위치 마커, Low Shelf, High Shelf/LPF, HPF 주파수와 기울기
+
 ## 안전 상태
 
 공식 Yamaha 자료로 확인된 Fader, Mute(Fader On), Mix Send만 제어 허용 대상입니다.
 Gain, PAN, PEQ 경로는 실험 잠금 뒤에 있으며 현장 검증이 필요합니다.
 `+48V` 읽기와 쓰기는 현장 프로토콜 검증 전까지 코드에서 차단되어 있습니다.
+Matrix Send, Pre/Post, Dynamics, HPF, 출력/DCA 쓰기도 정확한 CL5 경로를 현장에서 확인하기 전까지 안전 잠금 상태입니다.
 
 ## GitHub Pages
 
